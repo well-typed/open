@@ -11,6 +11,8 @@ import Data.Random
 import Control.Monad (replicateM, forM)
 import Control.Monad.Trans (lift)
 
+import Debug.Trace
+
 type Simplex = [(Vector Double, Double)]
 
 centroid :: Simplex -> Vector Double
@@ -39,6 +41,17 @@ initialSimplex f vinit vbox = do
     y <- lift $ f v
     return (v, y)
 
+initialSimplexStatic :: Monad m => (Vector Double -> m Double)
+                          -> Vector Double
+                          -> Vector Double
+                          -> m Simplex
+initialSimplexStatic f vinit vbox = do
+  let n = VS.length vinit + 1
+  fmap sortSimplex $ forM [0..n-1] $ \ix -> do
+        let v = if ix == n-1 then vinit else vinit VS.// [(ix, vbox VS.! ix)]
+        y <- f v
+        return (v, y)
+
 
 solveNm :: Monad m => (Vector Double -> m Double)
                    -> Simplex
@@ -49,7 +62,8 @@ solveNm f s0 tol maxiter = go s0 0 where
   go sim iter | iter > maxiter = return sim
               | otherwise = do
                   snext <- nmStep f sim
-                  go (sortSimplex snext) (iter+1)
+                  let s = show (iter, (fst $ head sim), (snd $ head sim), (snd$ last sim))
+                  go (sortSimplex snext) $ trace s (iter+1)
 
 
 nmStep :: Monad m => (Vector Double -> m Double) -> Simplex -> m Simplex
@@ -66,19 +80,19 @@ nmStep f  s0 = do
   fxr <- f xr
 
   if fx1 <= fxr && fxr <= (snd $ penultimate s0)
-    then return $ swapLast s0 (xr,fxr)
+    then return $ trace "A" $ swapLast s0 (xr,fxr)
     else do
         let xe = x0 `vadd` (gamma .* (x0 `vsub` xnp1))
         fxe <- f xe
         if fxr < fx1
             then if fxe < fxr
-                    then return $ swapLast s0 (xe,fxe)
-                    else return $ swapLast s0 (xr,fxr)
+                    then return $ trace ("B"++show(fxe, fxr)++show xe++show xr) $ swapLast s0 (xe,fxe)
+                    else return $ trace ("C"++show(fxe, fxr)++show xe++show xr) $ swapLast s0 (xr,fxr)
             else do
               let xc = xnp1 `vadd` (rho .* (x0 `vsub` xnp1))
               fxc <- f xc
               if fxc < fxnp1
-                   then return $ swapLast s0 (xc,fxc)
+                   then return $ trace "D" $ swapLast s0 (xc,fxc)
                    else --reduce
                      case s0 of
                        p0@(x1,_):rest -> do
@@ -86,7 +100,7 @@ nmStep f  s0 = do
                                 let xnew = x1 `vadd` (rho .* (xi`vsub`x1))
                                 y <- f xnew
                                 return (xnew,y)
-                            return $ p0 : morePts
+                            return $ trace "E" $ p0 : morePts
     where
       penultimate :: [a] -> a
       penultimate (x:_:[]) = x
